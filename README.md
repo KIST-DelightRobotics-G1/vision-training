@@ -3,60 +3,61 @@
 Converts kist-data-collector sessions (raw lossless recordings) into training
 datasets.
 
-## Requirements
-
-- Python 3.10+ — one-liner setup:
+## Setup
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
 ```
 
-- System `ffmpeg` with libx264 (video encoding)
-- No lerobot library needed — the converters write the LeRobot v2.1 files
-  directly.
+Also requires system `ffmpeg` with libx264. No lerobot library needed.
 
-Input: a session directory containing `meta.yaml`, `lowstate.csv`,
-`hand_{left,right}.csv`, `lowcmd.csv`, `hand_cmd_{left,right}.csv`, and
-`head/color.h264 + color.idx.csv`.
+## Converters (src/preprocess/)
+
+- `export_sonic.py` — **main converter**: GR00T N1.7 fine-tuning dataset for
+  `--embodiment-tag UNITREE_G1_SONIC` (50 Hz motion-token grid, GR00T-WholeBodyControl format)
+- `export_gr00t.py` — joint-space action dataset (AppleToPlate schema, `NEW_EMBODIMENT` route)
+- `export_lerobot.py` — Humanoid-Everyday-G1 schema, for merging with that dataset;
+  also the shared alignment front-end imported by the other two
 
 ## Usage
 
 ```bash
-# GR00T N1.7 fine-tuning dataset (AppleToPlate schema) — the main converter
-python3 src/preprocess/export_gr00t.py <sessions-root> --out <dataset-dir>
+python3 src/preprocess/export_sonic.py <sessions-root> --out <dataset-dir>
 
-# e.g. success episodes only, ready for launch_finetune.py --dataset-path
-python3 src/preprocess/export_gr00t.py ~/sessions_0818 --out ~/gr00t_train --results success
+# typical: success episodes only, with wrist cameras
+python3 src/preprocess/export_sonic.py ~/sessions_0818 --out ~/sonic_train \
+    --results success --wrist-cameras
 ```
 
-Options: `--results success,fail,unlabeled` (default `all`; label is kept in
-`meta/episodes.jsonl` either way), `--teleop-only`, `--camera head`,
-`--fps 30`, `--base-height 0.72`. The output dir must be empty.
-
-`src/preprocess/export_lerobot.py` (same flags) produces the
-Humanoid-Everyday-G1 schema instead — only needed when merging with that
-dataset.
+Options: `--results success,fail,unlabeled` (default `all`; the label is kept
+in `meta/episodes.jsonl` either way), `--wrist-cameras`, `--fps 50`,
+`--min-rows 25`. The output dir must be empty.
 
 ## Output structure
 
 ```
 <dataset-dir>/
 ├── data/chunk-000/
-│   └── episode_000000.parquet   # one row per 30 Hz timestep:
-│                                #   observation.state[43], action[43],
-│                                #   action.effort_* x7, navigate_command[3],
-│                                #   base_height_command[1], timestamp, indices
+│   └── episode_000000.parquet   # one row per 50 Hz motion-token tick:
+│                                #   observation.state[43], action.motion_token[64],
+│                                #   action.wbc[43], projected_gravity, root quat,
+│                                #   teleop hand joints, timestamp, indices
 ├── videos/chunk-000/
-│   └── observation.images.ego_view/
-│       └── episode_000000.mp4   # head camera, h264, 30 fps, 480x640
+│   ├── observation.images.ego_view/episode_000000.mp4      # h264, 50 fps
+│   ├── observation.images.left_wrist/...                   # with --wrist-cameras
+│   └── observation.images.right_wrist/...
 └── meta/
-    ├── info.json                # schema: features, fps, splits, path templates
-    ├── modality.json            # GR00T group slices of the 43-dim vectors
+    ├── info.json                # features, fps, splits, path templates
+    ├── modality.json            # GR00T group slices (UNITREE_G1_SONIC contract)
     ├── tasks.jsonl              # task_index <-> language instruction
     ├── episodes.jsonl           # per-episode length, task, result, session
-    └── episodes_stats.jsonl     # per-episode min/max/mean/std (normalization)
+    └── episodes_stats.jsonl     # per-episode min/max/mean/std
 ```
 
-Schema is copied from [nvidia/GR00T-N1.7-AppleToPlate](https://huggingface.co/datasets/nvidia/GR00T-N1.7-AppleToPlate)
-(the dataset used by NVIDIA's official G1 fine-tuning tutorial); only
-difference is the video codec (h264 here, AV1 there — both decode fine).
+Then fine-tune (in an Isaac-GR00T environment):
+
+```bash
+uv run python gr00t/experiment/launch_finetune.py \
+    --base-model-path nvidia/GR00T-N1.7-3B \
+    --dataset-path <dataset-dir> --embodiment-tag UNITREE_G1_SONIC ...
+```
