@@ -15,9 +15,14 @@ Also requires system `ffmpeg` with libx264. No lerobot library needed.
 
 - `export_sonic.py` — **main converter**: GR00T N1.7 fine-tuning dataset for
   `--embodiment-tag UNITREE_G1_SONIC` (50 Hz motion-token grid, GR00T-WholeBodyControl format)
-- `export_gr00t.py` — joint-space action dataset (AppleToPlate schema, `NEW_EMBODIMENT` route)
+- `export_sonic_trim.py` — export_sonic + leading-idle trimming (displacement-based
+  right-arm/hand motion-start detection, `--pad` context; `--no-trim` to disable the cut)
+- `export_sonic_trim_uwb.py` — export_sonic_trim + `observation.uwb[3]` record-only
+  column (nearest-joined UWB x,y,z; not in modality.json, so the GR00T loader ignores it)
 - `export_lerobot.py` — Humanoid-Everyday-G1 schema, for merging with that dataset;
-  also the shared alignment front-end imported by the other two
+  also the shared alignment front-end imported by the others
+- `dataset_viewer.py` / `view_parquet.py` — inspection: per-episode HTML viewer
+  (video + labeled rows) and labeled parquet dump/compare
 
 ## Usage
 

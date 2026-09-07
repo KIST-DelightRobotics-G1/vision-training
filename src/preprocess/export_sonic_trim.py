@@ -16,7 +16,11 @@ whichever comes first (in this data the fist often closes before the reach).
 Usage:
   python export_sonic_trim.py SESSIONS_ROOT --out DATASET_DIR
       [--arm-disp 0.15] [--hand-disp 0.1] [--pad 0.5]
-      [--dry-run] [+ all export_sonic.py options]
+      [--no-trim] [--dry-run] [+ all export_sonic.py options]
+
+--no-trim disables the leading-idle cut entirely (every session keeps all
+rows, nothing is skipped for "never moved") while keeping the rest of this
+exporter (camera-fps filter, min-rows, episodes.jsonl fields) identical.
 """
 
 import argparse
@@ -78,6 +82,9 @@ def main():
     ap.add_argument("--min-cam-fps", type=float, default=25.0,
                     help="skip sessions whose head camera received fewer "
                          "than this many frames/s (degraded stream; 0=off)")
+    ap.add_argument("--no-trim", action="store_true",
+                    help="트리밍 비활성화: 앞부분을 잘라내지 않고 전체 행을 "
+                         "그대로 내보냄 (동작 미검출 스킵도 하지 않음)")
     ap.add_argument("--dry-run", action="store_true",
                     help="report per-session trim, write nothing")
     args = ap.parse_args()
@@ -116,15 +123,19 @@ def main():
             print(f"[skip] {session.name}: no token rows")
             continue
 
-        first = motion_start(df, args.fps, args)
-        if first is None:
-            print(f"[skip] {session.name}: 오른팔/오른손이 시작 자세를 벗어난 적 없음")
-            continue
-        cut = max(0, first - int(round(args.pad * args.fps)))
+        if args.no_trim:
+            cut = 0
+            print(f"[keep] {session.name}: 트리밍 없음, {len(df)}행 유지")
+        else:
+            first = motion_start(df, args.fps, args)
+            if first is None:
+                print(f"[skip] {session.name}: 오른팔/오른손이 시작 자세를 벗어난 적 없음")
+                continue
+            cut = max(0, first - int(round(args.pad * args.fps)))
+            print(f"[trim] {session.name}: 앞 {cut}행({cut / args.fps:.1f}s) 제거, "
+                  f"{len(df)} -> {len(df) - cut}행")
         rows_in += len(df)
         rows_kept += len(df) - cut
-        print(f"[trim] {session.name}: 앞 {cut}행({cut / args.fps:.1f}s) 제거, "
-              f"{len(df)} -> {len(df) - cut}행")
         if len(df) - cut < args.min_rows:
             print(f"[skip] {session.name}: 트리밍 후 {len(df) - cut}행 < "
                   f"{args.min_rows}")
@@ -181,7 +192,7 @@ def main():
         start += len(sdf)
         ep += 1
 
-    if rows_in:
+    if rows_in and not args.no_trim:
         print(f"\ntrim total: {rows_in} rows -> {rows_kept} kept "
               f"({100 * (1 - rows_kept / rows_in):.0f}% removed)")
     if args.dry_run:
