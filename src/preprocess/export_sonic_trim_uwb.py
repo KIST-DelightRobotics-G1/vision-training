@@ -12,15 +12,15 @@ modality.json은 건드리지 않고 info.json features에만 등록한다.
   build_rows         -> uwb.csv nearest 조인 + 손가락 반응성 체크
   assemble_features  -> observation.uwb 벡터 추가
   write_meta         -> info.json에 observation.uwb feature 등록
-  trim.motion_start  -> 동작 시작 감지를 4부위(왼팔/오른팔/왼손/오른손)로 확장
+  trim.motion_start  -> 동작 시작 감지를 5부위(왼팔/오른팔/왼손/오른손/다리·허리)로 확장
 
 트리밍 (export_sonic_trim.py의 오른쪽-전용 감지를 대체):
-  왼팔(m15~21)/오른팔(m22~28)은 --arm-disp(0.15 rad), 왼손/오른손(Dex3
-  측정)은 --hand-disp(0.1 rad) 기준으로, **어느 부위든 시작 자세에서
-  처음 벗어난 시점**을 동작 시작으로 잡고 그 앞을 pad만 남기고 절단.
-  근거: 0909 수집분은 왼손 주도 태스크라 오른쪽만 감시하면 27개 중
-  26개 세션에서 실제 동작이 0.3~3.3 s 잘림. 다리/허리는 감시 안 함
-  (0902 수집분에 다리 선행 1건 있었음 — 필요 시 LIMBS에 추가).
+  왼팔(m15~21)/오른팔(m22~28)/다리·허리(m00~14)는 --arm-disp(0.15 rad),
+  왼손/오른손(Dex3 측정)은 --hand-disp(0.1 rad) 기준으로, **어느 부위든
+  시작 자세에서 처음 벗어난 시점**을 동작 시작으로 잡고 그 앞을 pad만
+  남기고 절단. 근거: 0909 수집분은 왼손 주도 태스크라 오른쪽만 감시하면
+  27개 중 26개 세션에서 실제 동작이 0.3~3.3 s 잘림; 0917~ 오이 태스크는
+  보행(Approach)으로 시작하므로 다리·허리도 감시.
 
 손가락 체크 (세션별, 양손 f0~f6):
   [경고] 무반응 손가락: cmd q 범위 > 0.3 rad인데 측정 q 범위 < 0.05 rad
@@ -84,11 +84,14 @@ LIMBS = {
     "오른팔": ([f"st.m{i}_q" for i in range(22, 29)], "arm_disp"),
     "왼손": ([f"hl.{f}_q" for f in sonic.HAND], "hand_disp"),
     "오른손": ([f"hr.{f}_q" for f in sonic.HAND], "hand_disp"),
+    # 보행 시작 태스크(Approach ...) 대응: 다리 스텝/허리 회전도 동작 시작으로 인정.
+    # 0.15 rad는 WBC 제자리 밸런싱 흔들림에는 안 걸리는 값 (0901/0902 185세션 검증).
+    "다리/허리": ([f"st.m{i:02d}_q" for i in range(15)], "arm_disp"),
 }
 
 
 def motion_start_all(df, fps: int, args) -> int | None:
-    """4부위 중 어느 쪽이든 시작 자세를 처음 벗어난 행 (None = 아무도 안 움직임)."""
+    """5부위 중 어느 쪽이든 시작 자세를 처음 벗어난 행 (None = 아무도 안 움직임)."""
     firsts = {}
     for name, (cols, thr) in LIMBS.items():
         a = df[cols].to_numpy(dtype=np.float64)
@@ -113,7 +116,11 @@ def build_rows_uwb(session: Path, camera: str, decoded_seqs: list):
     df = base._asof(df, session / "uwb.csv", ["x", "y", "z"],
                     "nearest").rename(columns={c: f"uwb.{c}" for c in "xyz"})
     if df[UWB_COLS].isna().any().any():
-        sys.exit(f"error: {session.name}: uwb.csv 조인에 NaN — uwb 스트림 확인")
+        # uwb.csv가 헤더만 있으면 nearest 조인이 전부 NaN이 된다. uwb는 기록
+        # 전용이라 학습엔 영향 없지만 다른 에피소드와 스키마를 맞춰야 하므로
+        # 해당 세션만 건너뛴다 (예전엔 sys.exit이라 변환 전체가 죽었음).
+        print(f"  경고: {session.name}: uwb.csv 비어 있음 — 세션 제외")
+        return df.head(0), None
     return df, frame_seqs
 
 
