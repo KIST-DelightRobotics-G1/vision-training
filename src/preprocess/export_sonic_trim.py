@@ -57,6 +57,11 @@ def motion_start(df: pd.DataFrame, fps: int, args) -> int | None:
     return int(idx[0]) if idx.size else None
 
 
+def parse_args(ap: argparse.ArgumentParser) -> argparse.Namespace:
+    """Hook: wrappers (export_sonic_trim_uwb.py) replace this to add options."""
+    return ap.parse_args()
+
+
 def main():
     ap = argparse.ArgumentParser(
         description="export_sonic + leading-idle trimming")
@@ -87,7 +92,7 @@ def main():
                          "그대로 내보냄 (동작 미검출 스킵도 하지 않음)")
     ap.add_argument("--dry-run", action="store_true",
                     help="report per-session trim, write nothing")
-    args = ap.parse_args()
+    args = parse_args(ap)
 
     wanted = {r.strip() for r in args.results.split(",")}
     if "all" in wanted:

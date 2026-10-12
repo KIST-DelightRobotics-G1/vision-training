@@ -55,7 +55,7 @@ CMD_MOVE = 0.3     # 이만큼 이상 명령이 움직였는데
 STATE_MOVE = 0.05  # 측정이 이 미만이면 "무반응 손가락"
 STATIC_GRIP = 0.1  # 전 관절 cmd 범위가 이 미만이면 "정적 그립" 세션
 
-SKIP_BAD_HANDS = False  # __main__에서 --skip-bad-hands로 설정
+SKIP_BAD_HANDS = False  # parse_args_uwb에서 --skip-bad-hands로 설정
 
 HANDS = {"왼손": ("cl", "hl"), "오른손": ("cr", "hr")}
 
@@ -139,14 +139,31 @@ def write_meta_uwb(out: Path, *args, **kwargs):
     info_path.write_text(json.dumps(info, indent=4))
 
 
+def parse_args_uwb(ap):
+    """trim의 argparse에 --skip-bad-hands 추가 + 5부위 감지에 맞게 help 갱신."""
+    global SKIP_BAD_HANDS
+    ap.description = "export_sonic + 5부위 트리밍 + 손가락 체크 + observation.uwb"
+    ap.add_argument("--skip-bad-hands", action="store_true",
+                    help="무반응 손가락이 있는 세션 제외 (기본: 경고만 하고 포함)")
+    helps = {
+        "--arm-disp": "왼팔/오른팔/다리·허리가 시작 자세에서 이만큼 벗어나면 "
+                      "동작 시작 (rad)",
+        "--hand-disp": "왼손/오른손(Dex3)이 시작 자세에서 이만큼 벗어나면 "
+                       "동작 시작 (rad)",
+    }
+    for opt, text in helps.items():
+        ap._option_string_actions[opt].help = text
+    args = ap.parse_args()
+    SKIP_BAD_HANDS = args.skip_bad_hands
+    return args
+
+
 _build_rows = sonic.build_rows
 _assemble_features = sonic.assemble_features
 _write_meta = sonic.write_meta
 
 if __name__ == "__main__":
-    if "--skip-bad-hands" in sys.argv:
-        SKIP_BAD_HANDS = True
-        sys.argv.remove("--skip-bad-hands")  # trim의 argparse에 넘기지 않음
+    trim.parse_args = parse_args_uwb
     sonic.build_rows = build_rows_uwb
     sonic.assemble_features = assemble_features_uwb
     sonic.write_meta = write_meta_uwb
