@@ -38,6 +38,7 @@ python3 src/preprocess/export_sonic_trim_uwb.py ~/sessions_0917 --out ~/sonic_tr
 |---|---|---|
 | `--results` | `all` | `success,fail,unlabeled` 중 포함할 라벨 (라벨은 어느 경우든 `episodes.jsonl`에 기록) |
 | `--wrist-cameras` | off | `left_wrist` / `right_wrist` 영상도 함께 저장 |
+| `--chunks-size` | `1000` | `chunk-NNN` 폴더당 에피소드 수 |
 | `--camera` | `head` | ego_view 영상 소스 카메라 |
 | `--fps` | `50` | 모션 토큰 그리드 주기 (Hz) |
 | `--min-rows` | `50` | 트리밍 후 이보다 짧은 에피소드 제외 (50 = 1 s, VLA 청크는 40 필요) |
@@ -55,20 +56,20 @@ python3 src/preprocess/export_sonic_trim_uwb.py ~/sessions_0917 --out ~/sonic_tr
    수신율(`--min-cam-fps`)로 거른다.
 2. **50 Hz 정렬**: `motion_token.csv` 틱마다 lowstate / 손 측정·명령 /
    lowcmd / 카메라 프레임을 recv_ns 기준으로 조인한다 (`export_sonic.py`).
-3. **손가락 체크** (양손 f0~f6):
+3. **손가락 체크** (양손 f0~f6, 트리밍 전 세션 전체 구간 대상):
    - 경고 — 무반응 손가락: cmd 범위 > 0.3 rad인데 측정 범위 < 0.05 rad
      (명령은 나가는데 관절이 안 움직임, 예: `20260901_084457` 왼손 f5).
      `--skip-bad-hands`면 세션 제외.
    - 참고 — 정적 그립: 양손 14관절 모두 cmd 범위 < 0.1 rad (주먹을 쥔 채 녹화).
-4. **앞부분 대기 구간 트리밍**: 5부위(왼팔 m15~21, 오른팔 m22~28,
+4. **UWB 조인**: `uwb.csv`의 x,y,z (m, ~10 Hz)를 nearest로 붙여
+   `observation.uwb[3]`로 저장한다. `uwb.csv`가 비어 있는 세션은 스키마를
+   맞추기 위해 제외(`[skip]` 사유 출력).
+5. **앞부분 대기 구간 트리밍**: 5부위(왼팔 m15~21, 오른팔 m22~28,
    다리·허리 m00~14, 왼손, 오른손) 중 **어느 부위든 시작 자세에서 처음
    벗어난 시점**을 동작 시작으로 잡고, 그 앞을 `--pad`만 남기고 자른다.
    속도가 아니라 첫 행 대비 변위로 판정한다 (텔레옵 떨림 때문에 속도
    임계값은 오작동). 동작 시작 이후는 건드리지 않는다. 어느 부위도
    움직이지 않은 세션은 제외.
-5. **UWB 조인**: `uwb.csv`의 x,y,z (m, ~10 Hz)를 nearest로 붙여
-   `observation.uwb[3]`로 저장한다. `uwb.csv`가 비어 있는 세션은 스키마를
-   맞추기 위해 제외(경고 출력).
 
 `observation.uwb`는 `info.json` features에만 등록되고 `modality.json`에는
 없으므로 GR00T 학습 로더는 읽지 않는다 — 분석/디버깅용 기록일 뿐이다.
@@ -80,7 +81,7 @@ python3 src/preprocess/export_sonic_trim_uwb.py ~/sessions_0917 --out ~/sonic_tr
 ├── data/chunk-000/
 │   └── episode_000000.parquet   # 50 Hz 모션 토큰 틱당 한 행:
 │                                #   observation.state[43], action.motion_token[64],
-│                                #   action.wbc[43], projected_gravity, root quat,
+│                                #   action.wbc[43], projected_gravity, root quat, init_base_quat,
 │                                #   teleop hand joints, observation.uwb[3],
 │                                #   timestamp, indices
 ├── videos/chunk-000/

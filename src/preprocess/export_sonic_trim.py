@@ -57,6 +57,10 @@ def motion_start(df: pd.DataFrame, fps: int, args) -> int | None:
     return int(idx[0]) if idx.size else None
 
 
+class SkipSession(Exception):
+    """Raised by a build_rows hook to drop a session; the message is the reason."""
+
+
 def parse_args(ap: argparse.ArgumentParser) -> argparse.Namespace:
     """Hook: wrappers (export_sonic_trim_uwb.py) replace this to add options."""
     return ap.parse_args()
@@ -123,7 +127,11 @@ def main():
                 continue
 
         decoded = base.decode_seqs(cam)
-        df, frame_seqs = sonic.build_rows(session, args.camera, decoded)
+        try:
+            df, frame_seqs = sonic.build_rows(session, args.camera, decoded)
+        except SkipSession as e:
+            print(f"[skip] {session.name}: {e}")
+            continue
         if frame_seqs is None or len(df) == 0:
             print(f"[skip] {session.name}: no token rows")
             continue
@@ -134,7 +142,7 @@ def main():
         else:
             first = motion_start(df, args.fps, args)
             if first is None:
-                print(f"[skip] {session.name}: 오른팔/오른손이 시작 자세를 벗어난 적 없음")
+                print(f"[skip] {session.name}: 동작 미검출 (시작 자세를 벗어난 부위 없음)")
                 continue
             cut = max(0, first - int(round(args.pad * args.fps)))
             print(f"[trim] {session.name}: 앞 {cut}행({cut / args.fps:.1f}s) 제거, "

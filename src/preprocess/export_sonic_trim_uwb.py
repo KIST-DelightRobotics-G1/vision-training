@@ -111,16 +111,14 @@ def build_rows_uwb(session: Path, camera: str, decoded_seqs: list):
     if frame_seqs is None or len(df) == 0:
         return df, frame_seqs
     if check_hands(df, session.name) and SKIP_BAD_HANDS:
-        print(f"[skip] {session.name}: 무반응 손가락 (--skip-bad-hands)")
-        return df.head(0), None
+        raise trim.SkipSession("무반응 손가락 (--skip-bad-hands)")
     df = base._asof(df, session / "uwb.csv", ["x", "y", "z"],
                     "nearest").rename(columns={c: f"uwb.{c}" for c in "xyz"})
     if df[UWB_COLS].isna().any().any():
         # uwb.csv가 헤더만 있으면 nearest 조인이 전부 NaN이 된다. uwb는 기록
         # 전용이라 학습엔 영향 없지만 다른 에피소드와 스키마를 맞춰야 하므로
         # 해당 세션만 건너뛴다 (예전엔 sys.exit이라 변환 전체가 죽었음).
-        print(f"  경고: {session.name}: uwb.csv 비어 있음 — 세션 제외")
-        return df.head(0), None
+        raise trim.SkipSession("uwb.csv 비어 있음 (uwb 컬럼을 채울 수 없음)")
     return df, frame_seqs
 
 
